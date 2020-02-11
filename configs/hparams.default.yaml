@@ -27,6 +27,11 @@ mel_fmin: 0.0
 mel_fmax: 8000.0
 n_mel_channels: 80
 
+# Audio preprocessors
+audio_preprocessors:
+  SilenceTrimmer:
+    db_threshold: 45
+
 ################################
 # Model Parameters             #
 ################################

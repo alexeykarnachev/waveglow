@@ -24,15 +24,19 @@
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # *****************************************************************************\
+import inspect
 import pathlib
 import random
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 
+import tacotron2.hparams as taco_hparams
 import tacotron2.models._layers as taco_layers
 import torch
 import torch.utils.data
 from scipy.io.wavfile import read
+from tacotron2 import factory
 from tacotron2 import hparams as _hparams
+from tacotron2.audio_preprocessors import _audio_preprocessor as audio_preprocessor
 
 MAX_WAV_VALUE = 32768.0
 
@@ -46,22 +50,13 @@ def prepare_dataloaders(hparams: _hparams.HParams) -> Tuple[torch.utils.data.Dat
     Returns:
         tuple with train and valid data loaders
     """
-    data_directory = pathlib.Path(hparams.data_directory)
 
-    def _get_dataloader(training_files: pathlib.Path):
-        dataset = Mel2Samp(
-            training_files=training_files, segment_length=hparams.segment_length, filter_length=hparams.filter_length,
-            hop_length=hparams.hop_length, win_length=hparams.win_length, sampling_rate=hparams.sampling_rate,
-            mel_fmin=hparams.mel_fmin, mel_fmax=hparams.mel_fmax, n_mel_channels=hparams.n_mel_channels
-        )
-        dataloader = dataset.get_data_loader(
-            batch_size=hparams.batch_size, is_distributed=hparams.use_all_gpu, shuffle=True
-        )
-
-        return dataloader
-
-    train_dataloader = _get_dataloader(data_directory / 'meta_train.txt')
-    valid_dataloader = _get_dataloader(data_directory / 'meta_valid.txt')
+    train_dataloader = Mel2Samp.from_hparams(hparams=hparams, is_valid=False).get_data_loader(
+        batch_size=hparams.batch_size, is_distributed=hparams.use_all_gpu, shuffle=True
+    )
+    valid_dataloader = Mel2Samp.from_hparams(hparams=hparams, is_valid=True).get_data_loader(
+        batch_size=hparams.batch_size, is_distributed=hparams.use_all_gpu, shuffle=False
+    )
 
     return train_dataloader, valid_dataloader
 
@@ -89,12 +84,23 @@ def files_to_list(file_path: pathlib.Path, separator: Optional[str] = '|') -> Li
     return file_paths
 
 
-def load_wav_to_torch(full_path):
+def load_wav_to_torch(full_path, audio_preprocessors: List[audio_preprocessor.AudioPreprocessor]) \
+        -> Tuple[torch.tensor, int]:
+    """Load audio file, apply audio preprocessors and transform to torch tensor.
+
+    Args:
+        full_path: Path to the audio file.
+        audio_preprocessors: List with audio preprocessor objects (from tacotron2 library).
+
+    Returns:
+        Tuple with audio tensor and it's sampling rate
     """
-    Loads wavdata into torch array
-    """
-    sampling_rate, data = read(full_path)
-    return torch.from_numpy(data).float(), sampling_rate
+    sampling_rate, audio = read(full_path)
+
+    for preprocessor in audio_preprocessors:
+        audio = preprocessor(audio)
+
+    return torch.from_numpy(audio).float(), sampling_rate
 
 
 class Mel2Samp(torch.utils.data.Dataset):
@@ -103,9 +109,11 @@ class Mel2Samp(torch.utils.data.Dataset):
     spectrogram, audio pair.
     """
 
-    def __init__(self, training_files, segment_length, filter_length,
-                 hop_length, win_length, sampling_rate, mel_fmin, mel_fmax, n_mel_channels: int):
-        self.audio_files = files_to_list(training_files)
+    def __init__(self, meta_file_path, segment_length, filter_length, hop_length, win_length, sampling_rate, mel_fmin,
+                 mel_fmax, n_mel_channels: int, audio_preprocessors: List[audio_preprocessor.AudioPreprocessor]):
+        self.audio_files = files_to_list(meta_file_path)
+
+        self.audio_preprocessors = audio_preprocessors
 
         self.stft: taco_layers.TacotronSTFT = taco_layers.TacotronSTFT(
             filter_length=filter_length,
@@ -119,6 +127,46 @@ class Mel2Samp(torch.utils.data.Dataset):
         self.segment_length = segment_length
         self.sampling_rate = sampling_rate
 
+    @classmethod
+    def from_hparams(cls, hparams: taco_hparams.HParams, is_valid: bool):
+        """Build class instance from hparams map
+        If you create dataset instance via this method, make sure, that meta_train.txt (if is_valid==False) or
+            meta_valid.txt (is is_valid==True) exists in the dataset directory
+        :param hparams: HParams, dictionary with parameters
+        :param is_valid: bool, get validation dataset or not (train)
+        :return: TextMelLoader, dataset instance
+        """
+        param_names = inspect.getfullargspec(cls.__init__).args
+        params = dict()
+        for param_name in param_names:
+            param_value = cls._get_param_value(param_name=param_name, hparams=hparams, is_valid=is_valid)
+
+            if param_value is not None:
+                params[param_name] = param_value
+
+        obj = cls(**params)
+        return obj
+
+    @staticmethod
+    def _get_param_value(param_name: str, hparams: taco_hparams.HParams, is_valid: bool) -> Any:
+        if param_name == 'self':
+            value = None
+        elif param_name == 'meta_file_path':
+            data_directory = pathlib.Path(hparams.data_directory)
+            postfix = 'valid' if is_valid else 'train'
+            value = data_directory / f'meta_{postfix}.txt'
+            if not value.is_file():
+                raise FileNotFoundError(f"Can't find {str(value)} file. Make sure, that file exists")
+        elif param_name == 'audio_preprocessors':
+            value = [
+                factory.Factory.get_object(f'tacotron2.audio_preprocessors.{k}', **v)
+                for k, v in hparams.audio_preprocessors.items()
+            ]
+        else:
+            value = hparams[param_name]
+
+        return value
+
     def get_mel(self, audio):
         audio_norm = audio / MAX_WAV_VALUE
         audio_norm = audio_norm.unsqueeze(0)
@@ -130,7 +178,8 @@ class Mel2Samp(torch.utils.data.Dataset):
     def __getitem__(self, index):
         # Read audio
         filename = self.audio_files[index]
-        audio, sampling_rate = load_wav_to_torch(filename)
+        audio, sampling_rate = load_wav_to_torch(filename, audio_preprocessors=self.audio_preprocessors)
+
         if sampling_rate != self.sampling_rate:
             raise ValueError("{} SR doesn't match target {} SR".format(
                 sampling_rate, self.sampling_rate))
