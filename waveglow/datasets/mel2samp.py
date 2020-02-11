@@ -26,7 +26,7 @@
 # *****************************************************************************\
 import pathlib
 import random
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 import tacotron2.models._layers as taco_layers
 import torch
@@ -182,14 +182,14 @@ class Mel2Samp(torch.utils.data.Dataset):
 class Mel2SampCollate:
     """Class-caller which represents a collate function for Mel2Samp dataset"""
 
-    def __call__(self, batch):
-        """Collate's training batch with mel and audio.
+    def __call__(self, batch) -> Dict:
+        """Collates training batch with mel and audio.
 
         Args:
             batch: Batch with mel spectrogram and audio.
 
         Returns:
-            Collated batch.
+            Collated batch dictionary (with x and y field)
         """
 
         mel, audio = list(zip(*batch))
@@ -197,4 +197,6 @@ class Mel2SampCollate:
         audio = torch.stack(audio)
         mel = torch.stack(mel)
 
-        return mel, audio
+        batch = {'x': mel, 'y': audio}
+
+        return batch

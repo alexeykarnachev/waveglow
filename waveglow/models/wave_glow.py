@@ -36,7 +36,7 @@ class WaveGlow(torch.nn.Module):
         forward_input[0] = mel_spectrogram:  batch x n_mel_channels x frames
         forward_input[1] = audio: batch x time
         """
-        spect, audio = forward_input
+        spect, audio = forward_input['x'], forward_input['y']
 
         #  Upsample spectrogram to size of audio
         spect = self.upsample(spect)

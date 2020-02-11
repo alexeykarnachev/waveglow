@@ -3,7 +3,7 @@
 ################################
 epochs: 500
 sigma: 1
-iters_per_checkpoint: 1000
+iters_per_checkpoint: 3
 seed: 228
 use_all_gpu: False
 fp16_opt_level:
