@@ -14,7 +14,6 @@ from transformers import AdamW
 
 from waveglow.callbacks import callbacks
 from waveglow.datasets import mel2samp
-from waveglow.models import _layers as layers
 
 warnings.filterwarnings("ignore")
 
@@ -47,7 +46,6 @@ if __name__ == '__main__':
     taco_utils.seed_everything(hparams.seed)
     dl = mel2samp.prepare_dataloaders(hparams)
 
-    criterion = layers.WaveGlowLoss(hparams.sigma)
     model = factory.Factory.get_class(f'waveglow.models.{hparams.model_class_name}')(hparams)
     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
 

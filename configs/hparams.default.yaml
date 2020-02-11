@@ -19,7 +19,7 @@ data_directory: '../data/dummy'
 # Audio Parameters             #
 ################################
 segment_length: 16000
-sampling_rate: 22050
+sampling_rate: 16000
 filter_length: 1024
 hop_length: 256
 win_length: 1024
@@ -37,7 +37,7 @@ n_early_size: 2
 WN_config:
   n_layers: 8
   n_channels: 256
-  kernel_size": 3
+  kernel_size: 3
 
 ################################
 # Optimization Hyperparameters #

@@ -1,36 +1,35 @@
 import torch
+from tacotron2 import hparams as taco_hparams
 
 from waveglow.models import _layers as layers
 
 
 class WaveGlow(torch.nn.Module):
-    def __init__(self, n_mel_channels, n_flows, n_group, n_early_every,
-                 n_early_size, WN_config):
+    def __init__(self, hparams: taco_hparams.HParams):
         super(WaveGlow, self).__init__()
 
-        self.upsample = torch.nn.ConvTranspose1d(n_mel_channels,
-                                                 n_mel_channels,
-                                                 1024, stride=256)
-        assert (n_group % 2 == 0)
-        self.n_flows = n_flows
-        self.n_group = n_group
-        self.n_early_every = n_early_every
-        self.n_early_size = n_early_size
+        self.upsample = torch.nn.ConvTranspose1d(hparams.n_mel_channels, hparams.n_mel_channels, 1024, stride=256)
+        assert (hparams.n_group % 2 == 0)
+        self.n_flows = hparams.n_flows
+        self.n_group = hparams.n_group
+        self.n_early_every = hparams.n_early_every
+        self.n_early_size = hparams.n_early_size
         self.WN = torch.nn.ModuleList()
         self.convinv = torch.nn.ModuleList()
 
-        n_half = int(n_group / 2)
+        n_half = int(hparams.n_group / 2)
 
         # Set up layers with the right sizes based on how many dimensions
         # have been output already
-        n_remaining_channels = n_group
-        for k in range(n_flows):
+        n_remaining_channels = hparams.n_group
+        for k in range(hparams.n_flows):
             if k % self.n_early_every == 0 and k > 0:
                 n_half = n_half - int(self.n_early_size / 2)
                 n_remaining_channels = n_remaining_channels - self.n_early_size
             self.convinv.append(layers.Invertible1x1Conv(n_remaining_channels))
-            self.WN.append(layers.WN(n_half, n_mel_channels * n_group, **WN_config))
+            self.WN.append(layers.WN(n_half, hparams.n_mel_channels * hparams.n_group, **hparams.WN_config))
         self.n_remaining_channels = n_remaining_channels  # Useful during inference
+        self.criterion = layers.WaveGlowLoss(hparams.sigma)
 
     def forward(self, forward_input):
         """
@@ -74,7 +73,12 @@ class WaveGlow(torch.nn.Module):
             audio = torch.cat([audio_0, audio_1], 1)
 
         output_audio.append(audio)
-        return torch.cat(output_audio, 1), log_s_list, log_det_W_list
+
+        model_output = torch.cat(output_audio, 1), log_s_list, log_det_W_list
+
+        loss = self.criterion(model_output)
+
+        return model_output, loss
 
     def infer(self, spect, sigma=1.0):
         spect = self.upsample(spect)

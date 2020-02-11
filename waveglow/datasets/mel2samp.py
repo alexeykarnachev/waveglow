@@ -146,7 +146,7 @@ class Mel2Samp(torch.utils.data.Dataset):
         mel = self.get_mel(audio)
         audio = audio / MAX_WAV_VALUE
 
-        return (mel, audio)
+        return mel, audio
 
     def get_data_loader(self, batch_size: int, is_distributed: bool, shuffle: bool) -> torch.utils.data.DataLoader:
         """Constructs DataLoader object from the Dataset object.
@@ -169,10 +169,32 @@ class Mel2Samp(torch.utils.data.Dataset):
             batch_size=batch_size,
             pin_memory=False,
             drop_last=True,
-            shuffle=shuffle
+            shuffle=shuffle,
+            collate_fn=Mel2SampCollate()
         )
 
         return dataloader
 
     def __len__(self):
         return len(self.audio_files)
+
+
+class Mel2SampCollate:
+    """Class-caller which represents a collate function for Mel2Samp dataset"""
+
+    def __call__(self, batch):
+        """Collate's training batch with mel and audio.
+
+        Args:
+            batch: Batch with mel spectrogram and audio.
+
+        Returns:
+            Collated batch.
+        """
+
+        mel, audio = list(zip(*batch))
+
+        audio = torch.stack(audio)
+        mel = torch.stack(mel)
+
+        return mel, audio
