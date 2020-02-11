@@ -2,7 +2,7 @@
 /data/
 .idea
 /configs/*
-!/configs/config.default.json
+!/configs/hparams.default.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

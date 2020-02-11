@@ -24,25 +24,69 @@
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # *****************************************************************************\
+import pathlib
 import random
+from typing import List, Optional, Tuple
 
 import tacotron2.models._layers as taco_layers
 import torch
 import torch.utils.data
 from scipy.io.wavfile import read
+from tacotron2 import hparams as _hparams
 
 MAX_WAV_VALUE = 32768.0
 
 
-def files_to_list(filename):
-    """
-    Takes a text file of filenames and makes a list of filenames
-    """
-    with open(filename, encoding='utf-8') as f:
-        files = f.readlines()
+def prepare_dataloaders(hparams: _hparams.HParams) -> Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
+    """Returns train and valid dataloaders tuple.
 
-    files = [f.rstrip() for f in files]
-    return files
+    Args:
+        hparams: Hyper parameters object
+
+    Returns:
+        tuple with train and valid data loaders
+    """
+    data_directory = pathlib.Path(hparams.data_directory)
+
+    def _get_dataloader(training_files: pathlib.Path):
+        dataset = Mel2Samp(
+            training_files=training_files, segment_length=hparams.segment_length, filter_length=hparams.filter_length,
+            hop_length=hparams.hop_length, win_length=hparams.win_length, sampling_rate=hparams.sampling_rate,
+            mel_fmin=hparams.mel_fmin, mel_fmax=hparams.mel_fmax, n_mel_channels=hparams.n_mel_channels
+        )
+        dataloader = dataset.get_data_loader(
+            batch_size=hparams.batch_size, is_distributed=hparams.use_all_gpu, shuffle=True
+        )
+
+        return dataloader
+
+    train_dataloader = _get_dataloader(data_directory / 'meta_train.txt')
+    valid_dataloader = _get_dataloader(data_directory / 'meta_valid.txt')
+
+    return train_dataloader, valid_dataloader
+
+
+def files_to_list(file_path: pathlib.Path, separator: Optional[str] = '|') -> List[pathlib.Path]:
+    """Returns list of file path, which are listed in input file (one file path at a line).
+
+    Args:
+        file_path: Path to the input file.
+        separator: Each line from the input file will be split at this separator. The first (0 index) item will
+            be treated as an audio file path. If None, lines will note be split (the whole line is an audio file path)
+
+    Returns: list of file paths
+
+    """
+    from_dir = file_path.parent
+    with file_path.open() as f:
+        if separator is not None:
+            file_lines = [line.split('|')[0].strip() for line in f.readlines()]
+        else:
+            file_lines = [line.strip() for line in f.readlines()]
+
+        file_paths = [from_dir / file_path for file_path in file_lines]
+
+    return file_paths
 
 
 def load_wav_to_torch(full_path):
@@ -103,6 +147,32 @@ class Mel2Samp(torch.utils.data.Dataset):
         audio = audio / MAX_WAV_VALUE
 
         return (mel, audio)
+
+    def get_data_loader(self, batch_size: int, is_distributed: bool, shuffle: bool) -> torch.utils.data.DataLoader:
+        """Constructs DataLoader object from the Dataset object.
+
+        Args:
+            batch_size: Training (or validation) batch size.
+            is_distributed: Set True, if you use distributed training.
+            shuffle: Set True if you want to shuffle the data (will be set False in case of distributed training).
+
+        Returns:
+            Prepared dataloader object.
+        """
+        sampler = torch.utils.data.DistributedSampler(self, shuffle=shuffle) if is_distributed else None
+        shuffle = shuffle if sampler is None else False
+
+        dataloader = torch.utils.data.DataLoader(
+            self,
+            num_workers=1,
+            sampler=sampler,
+            batch_size=batch_size,
+            pin_memory=False,
+            drop_last=True,
+            shuffle=shuffle
+        )
+
+        return dataloader
 
     def __len__(self):
         return len(self.audio_files)

@@ -1,0 +1,51 @@
+################################
+# Experiment Parameters        #
+################################
+epochs: 500
+sigma: 1
+iters_per_checkpoint: 1000
+seed: 228
+use_all_gpu: False
+fp16_opt_level:
+model_class_name: 'WaveGlow'
+device: 'cuda'
+
+################################
+# Data Parameters              #
+################################
+data_directory: '../data/dummy'
+
+################################
+# Audio Parameters             #
+################################
+segment_length: 16000
+sampling_rate: 22050
+filter_length: 1024
+hop_length: 256
+win_length: 1024
+mel_fmin: 0.0
+mel_fmax: 8000.0
+n_mel_channels: 80
+
+################################
+# Model Parameters             #
+################################
+n_flows: 12
+n_group: 8
+n_early_every: 4
+n_early_size: 2
+WN_config:
+  n_layers: 8
+  n_channels: 256
+  kernel_size": 3
+
+################################
+# Optimization Hyperparameters #
+################################
+learning_rate: 1e-3
+lr_reduce_patience: 5
+lr_reduce_factor: 0.25
+
+grad_clip_thresh: 1.0
+batch_size: 2
+accum_steps: 2
