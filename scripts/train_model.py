@@ -47,7 +47,7 @@ if __name__ == '__main__':
     dl = mel2samp.prepare_dataloaders(hparams)
 
     model = factory.Factory.get_class(f'waveglow.models.{hparams.model_class_name}')(hparams)
-    optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
+    optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay or 0)
 
     summary_writer = SummaryWriter(log_dir=tb_logdir)
 
