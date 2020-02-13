@@ -6,7 +6,7 @@ class Denoiser(torch.nn.Module):
     """ Removes model bias from audio produced with waveglow """
 
     def __init__(self, waveglow, filter_length=1024, n_overlap=4,
-                 win_length=1024, mode='zeros'):
+                 win_length=1024, mode='zeros', device='cpu'):
         super(Denoiser, self).__init__()
         self.stft = taco_layers.STFT(
             filter_length=filter_length,
@@ -26,7 +26,7 @@ class Denoiser(torch.nn.Module):
             raise Exception("Mode {} if not supported".format(mode))
 
         with torch.no_grad():
-            bias_audio = waveglow.infer(mel_input, sigma=0.0).float()
+            bias_audio = waveglow.infer(mel_input.to(device), sigma=0.0).float()
             bias_spec, _ = self.stft.transform(bias_audio)
 
         self.register_buffer('bias_spec', bias_spec[:, :, 0][:, :, None])
