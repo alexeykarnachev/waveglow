@@ -56,7 +56,6 @@ if __name__ == '__main__':
             summary_writer=summary_writer
         ),
         model_save_callback.ModelSaveCallback(
-            save_each_n_steps=hparams.iters_per_checkpoint,
             hold_n_models=3,
             models_dir=models_dir
         )
