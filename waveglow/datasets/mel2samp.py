@@ -52,10 +52,10 @@ def prepare_dataloaders(hparams: _hparams.HParams) -> Tuple[torch.utils.data.Dat
     """
 
     train_dataloader = Mel2Samp.from_hparams(hparams=hparams, is_valid=False).get_data_loader(
-        batch_size=hparams.batch_size, is_distributed=hparams.use_all_gpu, shuffle=True
+        batch_size=hparams.batch_size, shuffle=True
     )
     valid_dataloader = Mel2Samp.from_hparams(hparams=hparams, is_valid=True).get_data_loader(
-        batch_size=hparams.batch_size, is_distributed=hparams.use_all_gpu, shuffle=False
+        batch_size=hparams.batch_size, shuffle=False
     )
 
     return train_dataloader, valid_dataloader
@@ -197,24 +197,20 @@ class Mel2Samp(torch.utils.data.Dataset):
 
         return mel, audio
 
-    def get_data_loader(self, batch_size: int, is_distributed: bool, shuffle: bool) -> torch.utils.data.DataLoader:
+    def get_data_loader(self, batch_size: int, shuffle: bool) -> torch.utils.data.DataLoader:
         """Constructs DataLoader object from the Dataset object.
 
         Args:
             batch_size: Training (or validation) batch size.
-            is_distributed: Set True, if you use distributed training.
             shuffle: Set True if you want to shuffle the data (will be set False in case of distributed training).
 
         Returns:
             Prepared dataloader object.
         """
-        sampler = torch.utils.data.DistributedSampler(self, shuffle=shuffle) if is_distributed else None
-        shuffle = shuffle if sampler is None else False
 
         dataloader = torch.utils.data.DataLoader(
             self,
             num_workers=1,
-            sampler=sampler,
             batch_size=batch_size,
             pin_memory=False,
             drop_last=True,
