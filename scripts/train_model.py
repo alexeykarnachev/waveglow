@@ -1,48 +1,63 @@
 import argparse
 import shutil
 import warnings
+from logging import config as logging_config
 from pathlib import Path
 
 from tacotron2 import factory
-from tacotron2 import hparams
-from tacotron2 import learner
+from tacotron2 import hparams as taco_hparams
 from tacotron2 import utils as taco_utils
 from tacotron2.callbacks import model_save_callback
 from tacotron2.callbacks import reduce_lr_on_plateau_callback
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AdamW
 
-from waveglow.callbacks import callbacks
+from waveglow import learner as lrn
+from waveglow import log_config
+from waveglow.callbacks import callbacks as clb
 from waveglow.datasets import mel2samp
 
-warnings.filterwarnings("ignore")
 
-parser = argparse.ArgumentParser(description='Run BERT based Bi-Encoder experiment')
+def prepare_logging(experiment_dir):
+    """Configures logging."""
+    log_dir = experiment_dir / 'logs'
+    log_dir.mkdir(exist_ok=False, parents=False)
+    config = log_config.get_log_config(log_dir=log_dir)
+    logging_config.dictConfig(config)
 
-parser.add_argument(
-    '--experiments_dir', type=Path, required=True, help='Root directory of all your experiments'
-)
-parser.add_argument(
-    '--hparams_file', type=Path, required=True, help='Path to the hparams yaml file'
-)
-parser.add_argument(
-    '--tb_logdir', type=Path, required=True, help='Tensorboard logs directory'
-)
 
-args = parser.parse_args()
+def parse_args():
+    parser = argparse.ArgumentParser(description='Run BERT based Bi-Encoder experiment')
 
-hparams = hparams.HParams.from_yaml(args.hparams_file)
-experiments_dir = args.experiments_dir
-experiment_id = taco_utils.get_cur_time_str()
-tb_logdir = args.tb_logdir / experiment_id
+    parser.add_argument(
+        '--experiments_dir', type=Path, required=True, help='Root directory of all your experiments'
+    )
+    parser.add_argument(
+        '--hparams_file', type=Path, required=True, help='Path to the hparams yaml file'
+    )
+    parser.add_argument(
+        '--tb_logdir', type=Path, required=True, help='Tensorboard logs directory'
+    )
 
-experiment_dir: Path = experiments_dir / experiment_id
-experiment_dir.mkdir(exist_ok=False, parents=True)
-shutil.copy(str(args.hparams_file), str(experiment_dir / 'hparams.yaml'))
-taco_utils.dump_json(args.__dict__, experiment_dir / 'arguments.json')
-models_dir = experiment_dir / 'models'
+    args = parser.parse_args()
 
-if __name__ == '__main__':
+    return args
+
+
+def main():
+    args = parse_args()
+    hparams = taco_hparams.HParams.from_yaml(args.hparams_file)
+    experiments_dir = args.experiments_dir
+    experiment_id = taco_utils.get_cur_time_str()
+    tb_logdir = args.tb_logdir / experiment_id
+
+    experiment_dir: Path = experiments_dir / experiment_id
+    experiment_dir.mkdir(exist_ok=False, parents=True)
+    shutil.copy(str(args.hparams_file), str(experiment_dir / 'hparams.yaml'))
+    taco_utils.dump_json(args.__dict__, experiment_dir / 'arguments.json')
+    models_dir = experiment_dir / 'models'
+
+    prepare_logging(experiment_dir)
     taco_utils.seed_everything(hparams.seed)
     dl = mel2samp.prepare_dataloaders(hparams)
 
@@ -52,11 +67,10 @@ if __name__ == '__main__':
     summary_writer = SummaryWriter(log_dir=tb_logdir)
 
     callbacks = [
-        callbacks.TensorBoardLoggerCallback(
+        clb.TensorBoardLoggerCallback(
             summary_writer=summary_writer
         ),
         model_save_callback.ModelSaveCallback(
-            save_each_n_steps=hparams.iters_per_checkpoint,
             hold_n_models=3,
             models_dir=models_dir
         )
@@ -70,7 +84,7 @@ if __name__ == '__main__':
             )
         )
 
-    learner = learner.Learner(
+    lrn.Learner(
         model=model,
         optimizer=optimizer,
         callbacks=callbacks
@@ -84,3 +98,7 @@ if __name__ == '__main__':
         fp16_opt_level=hparams.fp16_opt_level,
         max_grad_norm=hparams.grad_clip_thresh
     )
+
+
+if __name__ == '__main__':
+    main()
