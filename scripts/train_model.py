@@ -3,6 +3,7 @@ import shutil
 import warnings
 from logging import config as logging_config
 from pathlib import Path
+import torch
 
 from tacotron2 import factory
 from tacotron2 import hparams as taco_hparams
@@ -47,6 +48,10 @@ def parse_args():
 def main():
     args = parse_args()
     hparams = taco_hparams.HParams.from_yaml(args.hparams_file)
+
+    if 'cuda' in hparams.device:
+        torch.cuda.set_device(hparams.device)
+
     experiments_dir = args.experiments_dir
     experiment_id = taco_utils.get_cur_time_str()
     tb_logdir = args.tb_logdir / experiment_id
