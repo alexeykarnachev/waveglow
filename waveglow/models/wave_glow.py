@@ -8,7 +8,8 @@ class WaveGlow(torch.nn.Module):
     def __init__(self, hparams: taco_hparams.HParams):
         super(WaveGlow, self).__init__()
 
-        self.upsample = torch.nn.ConvTranspose1d(hparams.n_mel_channels, hparams.n_mel_channels, 1024, stride=256)
+        self.upsample = torch.nn.ConvTranspose1d(hparams.n_mel_channels, hparams.n_mel_channels, hparams.win_length,
+                                                 stride=hparams.hop_length)
         assert (hparams.n_group % 2 == 0)
         self.n_flows = hparams.n_flows
         self.n_group = hparams.n_group
