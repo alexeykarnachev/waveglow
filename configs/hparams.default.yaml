@@ -3,12 +3,12 @@
 ################################
 epochs: 500
 sigma: 1
-iters_per_checkpoint: 3
+iters_per_checkpoint: 300
 seed: 228
 use_all_gpu: False
 fp16_opt_level:
 model_class_name: 'WaveGlow'
-device: 'cuda'
+device: 'cuda:0'
 
 ################################
 # Data Parameters              #
