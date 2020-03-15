@@ -30,7 +30,7 @@ n_mel_channels: 80
 # Audio preprocessors
 audio_preprocessors:
   SilenceTrimmer:
-    db_threshold: 45
+    top_db: 45
 
 ################################
 # Model Parameters             #
