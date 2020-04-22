@@ -44,8 +44,9 @@ class WaveGlowLoss(torch.nn.Module):
         super(WaveGlowLoss, self).__init__()
         self.sigma = sigma
 
-    def forward(self, model_output):
-        z, log_s_list, log_det_W_list = model_output
+    def forward(self, z, log_s_list, log_det_W_list):
+        log_s_total = torch.tensor([0.], device=z.device)
+        log_det_W_total = torch.tensor([0.], device=z.device)
         for i, log_s in enumerate(log_s_list):
             if i == 0:
                 log_s_total = torch.sum(log_s)
@@ -67,8 +68,14 @@ class Invertible1x1Conv(torch.nn.Module):
 
     def __init__(self, c):
         super(Invertible1x1Conv, self).__init__()
-        self.conv = torch.nn.Conv1d(c, c, kernel_size=1, stride=1, padding=0,
-                                    bias=False)
+        self.conv = torch.nn.Conv1d(
+            in_channels=c,
+            out_channels=c,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=False
+        )
 
         # Sample a random orthonormal matrix to initialize weights
         W = torch.qr(torch.FloatTensor(c, c).normal_())[0]
@@ -79,27 +86,28 @@ class Invertible1x1Conv(torch.nn.Module):
         W = W.view(c, c, 1)
         self.conv.weight.data = W
 
-    def forward(self, z, reverse=False):
-        # shape
-        batch_size, group_size, n_of_groups = z.size()
+        # Due to jit
+        self.W_inverse = torch.Tensor([0.])
 
+    def forward(self, z):
         W = self.conv.weight.squeeze()
+        batch_size, group_size, n_of_groups = z.size()
+        log_det_W = batch_size * n_of_groups * torch.logdet(W)
+        z = self.conv(z)
+        return z, log_det_W
 
-        if reverse:
-            if not hasattr(self, 'W_inverse'):
-                # Reverse computation
-                W_inverse = W.float().inverse()
-                W_inverse = Variable(W_inverse[..., None])
-                if z.type() == 'torch.cuda.HalfTensor':
-                    W_inverse = W_inverse.half()
-                self.W_inverse = W_inverse
-            z = F.conv1d(z, self.W_inverse, bias=None, stride=1, padding=0)
-            return z
-        else:
-            # Forward computation
-            log_det_W = batch_size * n_of_groups * torch.logdet(W)
-            z = self.conv(z)
-            return z, log_det_W
+
+    def infer(self, z):
+        W = self.conv.weight.squeeze()
+        if self.W_inverse.sum() == 0.:
+            # Reverse computation
+            W_inverse = W.float().inverse()
+            W_inverse = W_inverse[..., None]
+            # if z.type() == 'torch.cuda.HalfTensor':
+            #     W_inverse = W_inverse.half()
+            self.W_inverse = W_inverse
+        z = F.conv1d(z, self.W_inverse, bias=None, stride=1, padding=0)
+        return z
 
 
 class WN(torch.nn.Module):
@@ -150,22 +158,21 @@ class WN(torch.nn.Module):
             res_skip_layer = torch.nn.utils.weight_norm(res_skip_layer, name='weight')
             self.res_skip_layers.append(res_skip_layer)
 
-    def forward(self, forward_input):
-        audio, spect = forward_input
+    def forward(self, audio, spect):
         audio = self.start(audio)
         output = torch.zeros_like(audio)
-        n_channels_tensor = torch.IntTensor([self.n_channels])
+        n_channels_tensor = torch.tensor([self.n_channels], dtype=torch.int32)
 
         spect = self.cond_layer(spect)
 
-        for i in range(self.n_layers):
+        for i, (in_layer, skip_layer) in enumerate(zip(self.in_layers, self.res_skip_layers)):
             spect_offset = i * 2 * self.n_channels
             acts = fused_add_tanh_sigmoid_multiply(
-                self.in_layers[i](audio),
+                in_layer(audio),
                 spect[:, spect_offset:spect_offset + 2 * self.n_channels, :],
                 n_channels_tensor)
 
-            res_skip_acts = self.res_skip_layers[i](acts)
+            res_skip_acts = skip_layer(acts)
             if i < self.n_layers - 1:
                 audio = audio + res_skip_acts[:, :self.n_channels, :]
                 output = output + res_skip_acts[:, self.n_channels:, :]
