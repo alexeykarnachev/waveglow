@@ -82,7 +82,12 @@ class WaveGlow(torch.nn.Module):
         return model_output, loss
 
     def infer(self, spect, sigma=1.0):
+
+        spect_device = spect.device
+        spect_type = spect.type()
+
         spect = self.upsample(spect)
+
         # trim conv artifacts. maybe pad spec to kernel multiple
         time_cutoff = self.upsample.kernel_size[0] - self.upsample.stride[0]
         spect = spect[:, :, :-time_cutoff]
@@ -93,9 +98,9 @@ class WaveGlow(torch.nn.Module):
         audio = torch.normal(
             mean=torch.zeros(spect.size(0), self.n_remaining_channels, spect.size(2)),
             std=torch.ones(spect.size(0), self.n_remaining_channels, spect.size(2))
-        ).to(spect.device)
+        ).to(spect_device)
 
-        if spect.type() == 'torch.cuda.HalfTensor':
+        if spect_type == 'torch.cuda.HalfTensor':
             audio = audio.half()
 
         audio = torch.autograd.Variable(sigma * audio)
@@ -118,8 +123,8 @@ class WaveGlow(torch.nn.Module):
                 z = torch.normal(
                     mean=torch.zeros(spect.size(0), self.n_early_size, spect.size(2)),
                     std=torch.ones(spect.size(0), self.n_early_size, spect.size(2))
-                )
-                if spect.type() == 'torch.cuda.HalfTensor':
+                ).to(spect_device)
+                if spect_type == 'torch.cuda.HalfTensor':
                     z = z.half()
 
                 audio = torch.cat((sigma * z, audio), 1)
