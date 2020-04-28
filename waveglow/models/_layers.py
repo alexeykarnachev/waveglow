@@ -92,7 +92,7 @@ class Invertible1x1Conv(torch.nn.Module):
                 W_inverse = Variable(W_inverse[..., None])
                 if z.type() == 'torch.cuda.HalfTensor':
                     W_inverse = W_inverse.half()
-                self.W_inverse = W_inverse
+                self.W_inverse = torch.nn.Parameter(W_inverse, requires_grad=False)
             z = F.conv1d(z, self.W_inverse, bias=None, stride=1, padding=0)
             return z
         else:
