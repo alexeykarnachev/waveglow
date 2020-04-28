@@ -90,14 +90,13 @@ class WaveGlow(torch.nn.Module):
         spect = spect.unfold(2, self.n_group, self.n_group).permute(0, 2, 1, 3)
         spect = spect.contiguous().view(spect.size(0), spect.size(1), -1).permute(0, 2, 1)
 
+        audio = torch.normal(
+            mean=torch.zeros(spect.size(0), self.n_remaining_channels, spect.size(2)),
+            std=torch.ones(spect.size(0), self.n_remaining_channels, spect.size(2))
+        ).to(spect.device)
+
         if spect.type() == 'torch.cuda.HalfTensor':
-            audio = torch.HalfTensor(spect.size(0),
-                                     self.n_remaining_channels,
-                                     spect.size(2)).normal_().to(next(self.parameters()).device)
-        else:
-            audio = torch.FloatTensor(spect.size(0),
-                                      self.n_remaining_channels,
-                                      spect.size(2)).normal_().to(next(self.parameters()).device)
+            audio = audio.half()
 
         audio = torch.autograd.Variable(sigma * audio)
 
@@ -116,12 +115,13 @@ class WaveGlow(torch.nn.Module):
             audio = self.convinv[k](audio, reverse=True)
 
             if k % self.n_early_every == 0 and k > 0:
+                z = torch.normal(
+                    mean=torch.zeros(spect.size(0), self.n_early_size, spect.size(2)),
+                    std=torch.ones(spect.size(0), self.n_early_size, spect.size(2))
+                )
                 if spect.type() == 'torch.cuda.HalfTensor':
-                    z = torch.HalfTensor(spect.size(0), self.n_early_size, spect.size(2)).normal_()\
-                             .to(next(self.parameters()).device)
-                else:
-                    z = torch.FloatTensor(spect.size(0), self.n_early_size, spect.size(2)).normal_()\
-                             .to(next(self.parameters()).device)
+                    z = z.half()
+
                 audio = torch.cat((sigma * z, audio), 1)
 
         audio = audio.permute(0, 2, 1).contiguous().view(audio.size(0), -1).data
